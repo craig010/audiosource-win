@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audiosource-win"
+version = "0.1.0"
+description = "Use an Android phone as a Windows microphone via AudioSource, ADB, and VB-CABLE."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+  { name = "AudioSource Win contributors" }
+]
+keywords = ["android", "adb", "audio", "microphone", "vb-cable", "windows"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Win32 (MS Windows)",
+  "Intended Audience :: End Users/Desktop",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Multimedia :: Sound/Audio",
+]
+dependencies = [
+  "numpy",
+  "sounddevice",
+]
+
+[project.urls]
+Homepage = "https://github.com/craig010/audiosource-win"
+Issues = "https://github.com/craig010/audiosource-win/issues"
+Upstream = "https://github.com/gdzx/audiosource"
+
+[project.scripts]
+audiosource-win = "audiosource_win:main"
+
+[tool.setuptools]
+py-modules = ["audiosource_win"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
