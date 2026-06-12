@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.2.0 - 2026-06-12
+
+Added:
+- CLI subcommands for run, devices, list-audio, check, and doctor.
+- Runtime status display with audio level, queue, drop, underrun, reconnect, and uptime metrics.
+- Automatic reconnect for socket, ADB, and audio stream interruptions.
+- Rotating file logging.
+- Mock-based automated tests.
+
+Changed:
+- Improved error messages for ADB, socket, and audio device failures.
+- Updated development checks.
+- Moved implementation into an internal package while preserving `python audiosource_win.py`.
+
+Fixed:
+- Reduced risk of silent failure when the audio stream disconnects.
+
 ## 0.1.0 - 2026-04-28
 
 - Add Windows bridge for the Android AudioSource microphone stream.

@@ -5,7 +5,7 @@ Contributions are welcome. This project is intentionally small, so changes shoul
 ## Development Setup
 
 ```powershell
-pip install -e .
+pip install -e ".[dev]"
 ```
 
 ## Checks
@@ -13,15 +13,23 @@ pip install -e .
 Before opening a pull request, run:
 
 ```powershell
-python -m py_compile audiosource_win.py
+python -m compileall .
+python -m pytest -q
 python audiosource_win.py --help
+python audiosource_win.py run --help
+python audiosource_win.py check
+python audiosource_win.py devices
+python audiosource_win.py list-audio
 ```
 
-If you change audio device handling, also verify:
+If you change audio device handling and have local hardware, also verify:
 
 ```powershell
-python audiosource_win.py --list-devices
+python audiosource_win.py doctor
+python audiosource_win.py run --serial <device-serial>
 ```
+
+Hardware-dependent tests with a real Android phone, wireless debugging, and VB-CABLE are manual checks. They should not block the mock-based automated test suite.
 
 ## Pull Request Guidelines
 
