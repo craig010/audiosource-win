@@ -58,12 +58,16 @@ python audiosource_win.py devices
 python audiosource_win.py list-audio
 python audiosource_win.py check
 python audiosource_win.py doctor
+python audiosource_win.py tray
+python audiosource_win.py startup status
 ```
 
 After editable installation, the console script is also available:
 
 ```powershell
 audiosource-win check
+audiosource-win tray
+audiosource-win startup status
 ```
 
 Older command forms still work:
@@ -131,6 +135,66 @@ Fields include:
 - `underruns`: playback callback requests with no buffered audio
 - `reconnects`: reconnect attempts
 - `last_audio`: age of the most recent received audio block when known
+
+## System Tray
+
+v0.3 adds a resident system tray mode for keeping AudioSource Win available without a foreground terminal:
+
+```powershell
+python audiosource_win.py tray
+python audiosource_win.py tray --start-bridge
+python audiosource_win.py tray --no-start-bridge
+```
+
+`tray` starts only the tray icon by default. Use `--start-bridge` when you want the bridge to start immediately after the tray launches.
+
+The tray menu includes:
+
+- `Start Bridge`: start streaming in a background thread
+- `Stop Bridge`: stop the active bridge
+- `Reconnect`: stop and start the bridge
+- `Run Doctor`: run bounded diagnostics in the background and write results to the log
+- `Open Logs`: open the log directory
+- `Open Status`: show the current status through notification/log output
+- `Enable Startup`: enable login startup for tray mode
+- `Disable Startup`: disable login startup
+- `Exit`: stop the bridge and exit the tray
+
+The tray tooltip shows the current bridge state, device or transport when known, audio level, and reconnect count. The generated tray icon changes color by state: green for streaming, yellow for reconnecting or connecting, red for failed or ADB problem states, gray for stopped, and blue for initial or idle states.
+
+Tray mode depends on a normal Windows desktop session. Automated tests mock the tray UI and do not require a real notification area.
+
+## Login Startup
+
+AudioSource Win can register the current user's Windows Startup Folder so tray mode starts after login:
+
+```powershell
+python audiosource_win.py startup status
+python audiosource_win.py startup enable
+python audiosource_win.py startup disable
+```
+
+By default, `startup enable` launches:
+
+```text
+pythonw.exe -m audiosource_win_pkg tray --start-bridge
+```
+
+Optional forms:
+
+```powershell
+python audiosource_win.py startup enable --start-bridge
+python audiosource_win.py startup enable --no-start-bridge
+python audiosource_win.py startup enable --method startup-folder
+```
+
+Startup behavior notes:
+
+- This is login startup for the current Windows user, not BIOS-level power-on startup.
+- The default method is the current user's Startup Folder.
+- AudioSource Win does not install a Windows Service.
+- Task Scheduler is not implemented as the default startup method.
+- If the Python environment is moved or deleted, run `startup enable` again.
 
 ## Diagnostics
 
@@ -261,12 +325,15 @@ python -m compileall .
 python -m pytest -q
 python audiosource_win.py --help
 python audiosource_win.py run --help
+python audiosource_win.py tray --help
+python audiosource_win.py startup --help
+python audiosource_win.py startup status
 python audiosource_win.py check
 python audiosource_win.py devices
 python audiosource_win.py list-audio
 ```
 
-The pytest suite mocks ADB, socket, and sounddevice behavior. Manual hardware checks with a real Android device and VB-CABLE are useful but should not block mock-based CI.
+The pytest suite mocks ADB, socket, sounddevice, tray, and startup behavior. Manual hardware checks with a real Android device, VB-CABLE, Windows tray, and Startup Folder are useful but should not block mock-based CI.
 
 ## License
 

@@ -53,7 +53,18 @@ def configure_logging(level: str = "INFO", log_file: str | None = None) -> Path:
             print(f"[WARN] file logging disabled: {fallback_exc}", file=sys.stderr)
             return path
 
-    file_handler = RotatingFileHandler(path, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT, encoding="utf-8")
+    try:
+        file_handler = RotatingFileHandler(path, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT, encoding="utf-8")
+    except OSError as exc:
+        fallback = Path.cwd() / ".audiosource-win" / "logs" / "audiosource-win.log"
+        try:
+            fallback.parent.mkdir(parents=True, exist_ok=True)
+            print(f"[WARN] cannot open log file {path}: {exc}; using {fallback}", file=sys.stderr)
+            path = fallback
+            file_handler = RotatingFileHandler(path, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT, encoding="utf-8")
+        except OSError as fallback_exc:
+            print(f"[WARN] file logging disabled: {fallback_exc}", file=sys.stderr)
+            return path
     file_handler.setLevel(numeric_level)
     file_handler.setFormatter(formatter)
     root.addHandler(file_handler)
