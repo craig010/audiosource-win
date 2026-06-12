@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.3.0 - 2026-06-12
+
+Added:
+- System tray mode.
+- Tray controls for start, stop, reconnect, doctor, logs, status, startup, and exit.
+- Tray status tooltip and state-colored generated icons.
+- Startup management commands for status, enable, and disable.
+- Login startup integration using the current user's Startup Folder.
+- Tests for tray, startup, and bridge controller behavior.
+
+Changed:
+- CLI now includes tray and startup subcommands.
+- Documentation now covers tray and startup workflows.
+- Runtime dependencies now include pystray and Pillow for tray mode.
+
 ## 0.2.0 - 2026-06-12
 
 Added:

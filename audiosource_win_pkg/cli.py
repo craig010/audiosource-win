@@ -13,6 +13,7 @@ from .bridge import BridgeConfig, AudioBridge
 from .diagnostics import format_results, run_check, run_doctor
 from .errors import AudioSourceWinError
 from .logging_config import configure_logging
+from .startup import StartupError, disable_startup, enable_startup, startup_status
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 27183
@@ -27,7 +28,7 @@ DEFAULT_STATUS_INTERVAL = 1.0
 DEFAULT_SAMPLE_RATE = 44100
 DEFAULT_OUTPUT_CHANNELS = 2
 
-COMMANDS = {"run", "devices", "list-audio", "check", "doctor"}
+COMMANDS = {"run", "devices", "list-audio", "check", "doctor", "tray", "startup"}
 
 
 def add_run_options(parser: argparse.ArgumentParser) -> None:
@@ -85,6 +86,28 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser.add_argument("--device", type=int)
     doctor_parser.add_argument("--log-level", default="WARNING")
     doctor_parser.add_argument("--log-file")
+
+    tray_parser = subparsers.add_parser("tray", help="Run resident system tray mode")
+    add_run_options(tray_parser)
+    start_bridge = tray_parser.add_mutually_exclusive_group()
+    start_bridge.add_argument("--start-bridge", dest="start_bridge", action="store_true", help="Start the bridge when the tray launches")
+    start_bridge.add_argument("--no-start-bridge", dest="start_bridge", action="store_false", help="Launch only the tray")
+    tray_parser.set_defaults(start_bridge=False)
+
+    startup_parser = subparsers.add_parser("startup", help="Manage login startup for tray mode")
+    startup_parser.add_argument("--log-level", default="WARNING")
+    startup_parser.add_argument("--log-file")
+    startup_subparsers = startup_parser.add_subparsers(dest="startup_command")
+    startup_subparsers.required = True
+
+    startup_subparsers.add_parser("status", help="Show whether login startup is enabled")
+    enable_parser = startup_subparsers.add_parser("enable", help="Enable current-user login startup")
+    enable_start_bridge = enable_parser.add_mutually_exclusive_group()
+    enable_start_bridge.add_argument("--start-bridge", dest="start_bridge", action="store_true", default=True)
+    enable_start_bridge.add_argument("--no-start-bridge", dest="start_bridge", action="store_false")
+    enable_parser.add_argument("--method", default="startup-folder", choices=["startup-folder", "task-scheduler"])
+    disable_parser = startup_subparsers.add_parser("disable", help="Disable current-user login startup")
+    disable_parser.add_argument("--method", default="startup-folder", choices=["startup-folder", "task-scheduler"])
 
     return parser
 
@@ -201,6 +224,54 @@ def cmd_run(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_tray(args: argparse.Namespace) -> int:
+    if args.verbose:
+        args.log_level = "DEBUG"
+    log_path = configure_logging(args.log_level, args.log_file)
+    logging.info("AudioSource Win %s tray starting", __version__)
+    logging.info("Log file: %s", log_path)
+    config = build_config(args)
+    try:
+        from .tray import run_tray
+
+        run_tray(config, start_bridge=args.start_bridge)
+        return 0
+    except ImportError as exc:
+        print(f"[FAIL] tray dependencies are missing: {exc}")
+        logging.error("Tray dependencies are missing: %s", exc)
+        return 1
+    except Exception as exc:
+        print(f"[FAIL] tray failed: {exc}")
+        logging.error("Tray failed: %s", exc, exc_info=logging.getLogger().isEnabledFor(logging.DEBUG))
+        return 1
+
+
+def cmd_startup(args: argparse.Namespace) -> int:
+    if getattr(args, "method", "startup-folder") == "task-scheduler":
+        print("Task Scheduler startup method is not implemented yet.")
+        return 1
+    try:
+        if args.startup_command == "status":
+            enabled = startup_status()
+            print(f"Startup is {'enabled' if enabled else 'disabled'}.")
+            return 0
+        if args.startup_command == "enable":
+            path = enable_startup(start_bridge=args.start_bridge)
+            print(f"Startup enabled: {path}")
+            return 0
+        if args.startup_command == "disable":
+            removed = disable_startup()
+            print("Startup disabled." if removed else "Startup already disabled.")
+            return 0
+    except StartupError as exc:
+        print(f"[FAIL] {exc}")
+        return 1
+    except OSError as exc:
+        print(f"[FAIL] startup operation failed: {exc}")
+        return 1
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = normalize_argv(sys.argv[1:] if argv is None else argv)
     parser = build_parser()
@@ -218,6 +289,10 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_check(args)
     if command == "doctor":
         return cmd_doctor(args)
+    if command == "tray":
+        return cmd_tray(args)
+    if command == "startup":
+        return cmd_startup(args)
     return cmd_run(args)
 
 

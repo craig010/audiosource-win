@@ -87,6 +87,12 @@ class AudioBridge:
                 pass
             self.current_socket = None
 
+    def stop(self) -> None:
+        """Request a graceful stop from another thread."""
+        self.set_state(STATE_STOPPING)
+        self.stop_event.set()
+        self.close_current_socket()
+
     def connect_socket(self) -> socket.socket:
         self.set_state(STATE_SOCKET_CONNECTING)
         try:
