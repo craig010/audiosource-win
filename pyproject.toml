@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "audiosource-win"
-version = "0.3.0"
+version = "0.4.0"
 description = "Use an Android phone as a Windows microphone via AudioSource, ADB, and VB-CABLE."
 readme = "README.md"
 requires-python = ">=3.10"

@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.0 - 2026-06-22
+
+Added:
+- Silent `run --background` mode with PID-file single-instance protection and stale PID recovery.
+- `status`, `stop`, and `logs` commands for the managed background bridge.
+- Login startup modes: `background` (default) and the existing visible `tray` mode.
+- Dedicated background error log and mock-based runtime management tests.
+
+Changed:
+- Startup Folder entries use `pythonw.exe` when available and set the repository working directory before launch.
+- Background startup launches without a console window, tray icon, or notifications.
+
 ## 0.3.0 - 2026-06-12
 
 Added:

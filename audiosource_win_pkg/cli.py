@@ -4,16 +4,20 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
+import time
 
 from . import __version__
 from .adb import list_adb_devices
 from .audio import find_vb_cable_device, format_output_devices, query_sound_devices
 from .bridge import BridgeConfig, AudioBridge
+from .controller import BridgeController
 from .diagnostics import format_results, run_check, run_doctor
 from .errors import AudioSourceWinError
 from .logging_config import configure_logging
-from .startup import StartupError, disable_startup, enable_startup, startup_status
+from .runtime import claim_runtime, clear_runtime, log_path, read_runtime, request_stop, stop_request_path
+from .startup import StartupError, disable_startup, enable_startup, startup_mode, startup_status
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 27183
@@ -28,7 +32,7 @@ DEFAULT_STATUS_INTERVAL = 1.0
 DEFAULT_SAMPLE_RATE = 44100
 DEFAULT_OUTPUT_CHANNELS = 2
 
-COMMANDS = {"run", "devices", "list-audio", "check", "doctor", "tray", "startup"}
+COMMANDS = {"run", "devices", "list-audio", "check", "doctor", "tray", "startup", "status", "stop", "logs"}
 
 
 def add_run_options(parser: argparse.ArgumentParser) -> None:
@@ -64,6 +68,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_parser = subparsers.add_parser("run", help="Run the audio bridge")
     add_run_options(run_parser)
+    run_parser.add_argument("--background", action="store_true", help="Run silently with PID-based background management")
+    run_parser.add_argument("--quiet", action="store_true", help="Do not print runtime status lines")
 
     devices_parser = subparsers.add_parser("devices", help="List Android devices from adb")
     devices_parser.add_argument("--log-level", default="WARNING")
@@ -94,7 +100,7 @@ def build_parser() -> argparse.ArgumentParser:
     start_bridge.add_argument("--no-start-bridge", dest="start_bridge", action="store_false", help="Launch only the tray")
     tray_parser.set_defaults(start_bridge=False)
 
-    startup_parser = subparsers.add_parser("startup", help="Manage login startup for tray mode")
+    startup_parser = subparsers.add_parser("startup", help="Manage current-user login startup")
     startup_parser.add_argument("--log-level", default="WARNING")
     startup_parser.add_argument("--log-file")
     startup_subparsers = startup_parser.add_subparsers(dest="startup_command")
@@ -102,12 +108,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     startup_subparsers.add_parser("status", help="Show whether login startup is enabled")
     enable_parser = startup_subparsers.add_parser("enable", help="Enable current-user login startup")
+    enable_parser.add_argument("--mode", choices=["background", "tray"], default="background", help="Login startup mode (default: background)")
     enable_start_bridge = enable_parser.add_mutually_exclusive_group()
     enable_start_bridge.add_argument("--start-bridge", dest="start_bridge", action="store_true", default=True)
     enable_start_bridge.add_argument("--no-start-bridge", dest="start_bridge", action="store_false")
     enable_parser.add_argument("--method", default="startup-folder", choices=["startup-folder", "task-scheduler"])
     disable_parser = startup_subparsers.add_parser("disable", help="Disable current-user login startup")
     disable_parser.add_argument("--method", default="startup-folder", choices=["startup-folder", "task-scheduler"])
+
+    subparsers.add_parser("status", help="Show managed background runtime status")
+    subparsers.add_parser("stop", help="Request a managed background instance to stop")
+    subparsers.add_parser("logs", help="Show background log file locations")
 
     return parser
 
@@ -153,6 +164,7 @@ def build_config(args: argparse.Namespace) -> BridgeConfig:
         app_start_wait=args.app_start_wait,
         auto_adb=not args.no_auto_adb and not args.input_file,
         input_file=args.input_file,
+        quiet=getattr(args, "quiet", False) or getattr(args, "background", False),
     )
 
 
@@ -203,6 +215,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    if args.background:
+        return cmd_background(args)
     if args.verbose:
         args.log_level = "DEBUG"
     log_path = configure_logging(args.log_level, args.log_file)
@@ -222,6 +236,87 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"[FAIL] {exc}")
         logging.error("Unhandled bridge failure: %s", exc, exc_info=logging.getLogger().isEnabledFor(logging.DEBUG))
         return 1
+
+
+def cmd_background(args: argparse.Namespace) -> int:
+    if args.verbose:
+        args.log_level = "DEBUG"
+    managed_log = log_path()
+    info = claim_runtime("background", managed_log)
+    if info is None:
+        existing = read_runtime()
+        print(f"AudioSource Win background instance is already running (pid {existing.pid if existing else 'unknown'}).")
+        return 1
+
+    configure_logging(args.log_level, str(managed_log), console=False)
+    logging.info("AudioSource Win %s background starting", __version__)
+    logging.info("mode=background pid=%s python=%s cwd=%s", info.pid, sys.executable, os.getcwd())
+    logging.info("Startup arguments: %s", vars(args))
+    config = build_config(args)
+    logging.info("Bridge config: %s", config)
+    controller = BridgeController(config)
+    try:
+        controller.start()
+        while controller.is_running():
+            if stop_request_path().exists():
+                logging.info("Stop requested through CLI.")
+                controller.stop(timeout=5.0)
+                break
+            time.sleep(0.25)
+        status = controller.get_status()
+        if status.last_error:
+            logging.error("Background bridge stopped with error: %s", status.last_error)
+            return 1
+        logging.info("Background bridge exited: %s", status.state)
+        return 0
+    except KeyboardInterrupt:
+        logging.info("Background bridge interrupted.")
+        controller.stop(timeout=5.0)
+        return 0
+    except Exception as exc:
+        logging.exception("Background bridge failed: %s", exc)
+        return 1
+    finally:
+        clear_runtime()
+
+
+def cmd_status() -> int:
+    info = read_runtime()
+    if info is None:
+        running = False
+        pid = "n/a"
+        mode = "n/a"
+    else:
+        from .runtime import process_is_alive
+
+        running = process_is_alive(info.pid)
+        if not running:
+            clear_runtime()
+        pid = info.pid if running else "n/a"
+        mode = info.mode if running else "n/a"
+    enabled = startup_status()
+    print(f"Running: {'yes' if running else 'no'}")
+    print(f"PID: {pid}")
+    print(f"Mode: {mode}")
+    print(f"Log: {log_path()}")
+    print(f"Startup: {'enabled' if enabled else 'disabled'}")
+    print(f"Startup mode: {startup_mode() or 'n/a'}")
+    return 0
+
+
+def cmd_stop() -> int:
+    info = request_stop()
+    if info is None:
+        print("No managed background instance is running.")
+        return 0
+    print(f"Stop requested for background instance pid {info.pid}.")
+    return 0
+
+
+def cmd_logs() -> int:
+    print(f"Log: {log_path()}")
+    print(f"Error log: {log_path().with_name('audiosource-win.error.log')}")
+    return 0
 
 
 def cmd_tray(args: argparse.Namespace) -> int:
@@ -254,10 +349,11 @@ def cmd_startup(args: argparse.Namespace) -> int:
         if args.startup_command == "status":
             enabled = startup_status()
             print(f"Startup is {'enabled' if enabled else 'disabled'}.")
+            print(f"Mode: {startup_mode() or 'n/a'}")
             return 0
         if args.startup_command == "enable":
-            path = enable_startup(start_bridge=args.start_bridge)
-            print(f"Startup enabled: {path}")
+            path = enable_startup(mode=args.mode, start_bridge=args.start_bridge)
+            print(f"Startup enabled ({args.mode}): {path}")
             return 0
         if args.startup_command == "disable":
             removed = disable_startup()
@@ -293,6 +389,12 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_tray(args)
     if command == "startup":
         return cmd_startup(args)
+    if command == "status":
+        return cmd_status()
+    if command == "stop":
+        return cmd_stop()
+    if command == "logs":
+        return cmd_logs()
     return cmd_run(args)
 
 

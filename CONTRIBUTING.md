@@ -20,6 +20,8 @@ python audiosource_win.py run --help
 python audiosource_win.py tray --help
 python audiosource_win.py startup --help
 python audiosource_win.py startup status
+python audiosource_win.py status
+python audiosource_win.py stop
 python audiosource_win.py check
 python audiosource_win.py devices
 python audiosource_win.py list-audio

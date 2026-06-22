@@ -41,6 +41,7 @@ class BridgeConfig:
     app_start_wait: float = 1.5
     auto_adb: bool = True
     input_file: str | None = None
+    quiet: bool = False
 
 
 class AudioBridge:
@@ -231,7 +232,8 @@ class AudioBridge:
                 self.set_state(STATE_SILENT, f"no audio for {self.status.last_audio_age:.1f}s")
                 self.close_current_socket()
             line = format_status_line(self.status)
-            print(line, flush=True)
+            if not self.config.quiet:
+                print(line, flush=True)
             if line != self._last_status_line:
                 logging.info("status %s", line)
                 self._last_status_line = line

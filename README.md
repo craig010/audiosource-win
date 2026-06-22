@@ -60,6 +60,9 @@ python audiosource_win.py check
 python audiosource_win.py doctor
 python audiosource_win.py tray
 python audiosource_win.py startup status
+python audiosource_win.py status
+python audiosource_win.py stop
+python audiosource_win.py logs
 ```
 
 After editable installation, the console script is also available:
@@ -164,20 +167,49 @@ The tray tooltip shows the current bridge state, device or transport when known,
 
 Tray mode depends on a normal Windows desktop session. Automated tests mock the tray UI and do not require a real notification area.
 
-## Login Startup
+## Windows Background Autostart
 
-AudioSource Win can register the current user's Windows Startup Folder so tray mode starts after login:
+For a silent, current-user login startup without a console window, tray icon, or notifications:
+
+```powershell
+python audiosource_win.py startup enable --mode background
+```
+
+This uses the current user's Startup Folder and launches the active environment's `pythonw.exe` with `-m audiosource_win_pkg run --background --quiet`. It is not a Windows Service. The background bridge writes rotating logs under the repository's `.audiosource-win\logs` directory and keeps its PID and stop request files in `.audiosource-win\runtime`.
+
+Manage the background bridge without opening a tray UI:
 
 ```powershell
 python audiosource_win.py startup status
-python audiosource_win.py startup enable
+python audiosource_win.py status
+python audiosource_win.py stop
+python audiosource_win.py logs
 python audiosource_win.py startup disable
 ```
 
-By default, `startup enable` launches:
+`status` reports whether the managed instance is alive, its PID and mode, the log path, and login startup state. `stop` only signals the PID recorded by AudioSource Win; it does not terminate unrelated Python processes or run `adb kill-server`.
+
+To keep the visible v0.3 tray workflow instead, select tray mode explicitly:
+
+```powershell
+python audiosource_win.py startup enable --mode tray
+python audiosource_win.py tray
+```
+
+## Login Startup
+
+AudioSource Win can register the current user's Windows Startup Folder so background or tray mode starts after login:
+
+```powershell
+python audiosource_win.py startup status
+python audiosource_win.py startup enable --mode background
+python audiosource_win.py startup disable
+```
+
+By default, `startup enable` launches the silent background bridge:
 
 ```text
-pythonw.exe -m audiosource_win_pkg tray --start-bridge
+pythonw.exe -m audiosource_win_pkg run --background --quiet
 ```
 
 Optional forms:
@@ -185,6 +217,7 @@ Optional forms:
 ```powershell
 python audiosource_win.py startup enable --start-bridge
 python audiosource_win.py startup enable --no-start-bridge
+python audiosource_win.py startup enable --mode tray
 python audiosource_win.py startup enable --method startup-folder
 ```
 
@@ -245,6 +278,8 @@ If `%APPDATA%` is unavailable, the fallback is:
 ```
 
 Rotating logs use 5 MB files with 5 backups. Pass `--log-file` to override the path and `--log-level DEBUG` for detailed diagnostics.
+
+Background mode intentionally has no console logging. It writes `.audiosource-win\logs\audiosource-win.log` and `.audiosource-win\logs\audiosource-win.error.log` instead.
 
 ## USB And Wireless Debugging
 
@@ -328,6 +363,8 @@ python audiosource_win.py run --help
 python audiosource_win.py tray --help
 python audiosource_win.py startup --help
 python audiosource_win.py startup status
+python audiosource_win.py status
+python audiosource_win.py stop
 python audiosource_win.py check
 python audiosource_win.py devices
 python audiosource_win.py list-audio

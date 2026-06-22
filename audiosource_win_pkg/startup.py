@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-ENTRY_NAME = "audiosource-win-tray.vbs"
+ENTRY_NAME = "audiosource-win-startup.vbs"
 
 
 class StartupError(RuntimeError):
@@ -37,32 +37,35 @@ def _vbs_quote(value: str) -> str:
     return value.replace('"', '""')
 
 
-def build_startup_command(start_bridge: bool = True, executable: str | None = None) -> str:
+def build_startup_command(mode: str = "background", start_bridge: bool = True, executable: str | None = None) -> str:
     pythonw = find_pythonw(executable)
-    args = ["-m", "audiosource_win_pkg", "tray"]
-    if start_bridge:
-        args.append("--start-bridge")
+    if mode == "background":
+        args = ["-m", "audiosource_win_pkg", "run", "--background", "--quiet"]
+    elif mode == "tray":
+        args = ["-m", "audiosource_win_pkg", "tray"]
+        args.append("--start-bridge" if start_bridge else "--no-start-bridge")
     else:
-        args.append("--no-start-bridge")
+        raise StartupError(f"unsupported startup mode: {mode}")
     return " ".join([f'"{pythonw}"', *args])
 
 
-def build_vbs_content(start_bridge: bool = True, executable: str | None = None) -> str:
-    command = build_startup_command(start_bridge, executable)
+def build_vbs_content(mode: str = "background", start_bridge: bool = True, executable: str | None = None) -> str:
+    command = build_startup_command(mode, start_bridge, executable)
     return "\n".join(
         [
             'Set shell = CreateObject("WScript.Shell")',
+            f'shell.CurrentDirectory = "{_vbs_quote(str(Path.cwd()))}"',
             f'shell.Run "{_vbs_quote(command)}", 0, False',
             "",
         ]
     )
 
 
-def enable_startup(start_bridge: bool = True) -> Path:
+def enable_startup(mode: str = "background", start_bridge: bool = True) -> Path:
     folder = get_startup_folder()
     folder.mkdir(parents=True, exist_ok=True)
     entry = get_startup_entry_path()
-    entry.write_text(build_vbs_content(start_bridge), encoding="utf-8")
+    entry.write_text(build_vbs_content(mode, start_bridge), encoding="utf-8")
     return entry
 
 
@@ -76,3 +79,11 @@ def disable_startup() -> bool:
 
 def startup_status() -> bool:
     return get_startup_entry_path().exists()
+
+
+def startup_mode() -> str | None:
+    try:
+        content = get_startup_entry_path().read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    return "background" if "run --background" in content else "tray" if " tray" in content else "unknown"
