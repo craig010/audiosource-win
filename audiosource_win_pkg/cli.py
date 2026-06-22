@@ -16,7 +16,7 @@ from .controller import BridgeController
 from .diagnostics import format_results, run_check, run_doctor
 from .errors import AudioSourceWinError
 from .logging_config import configure_logging
-from .runtime import claim_runtime, clear_runtime, log_path, read_runtime, request_stop, runtime_dir, runtime_is_live, state_path, pid_path, stop_request_path
+from .runtime import RuntimeClaimBlocked, claim_runtime, clear_runtime, log_path, read_runtime, request_stop, runtime_dir, runtime_is_live, state_path, pid_path, stop_request_path
 from .startup import StartupError, disable_startup, enable_startup, startup_mode, startup_status
 
 DEFAULT_HOST = "127.0.0.1"
@@ -254,16 +254,21 @@ def cmd_background(args: argparse.Namespace) -> int:
     try:
         command = " ".join([f'"{sys.executable}"', "-m", "audiosource_win_pkg", *sys.argv[1:]])
         info = claim_runtime("background", configured_log, command)
+    except RuntimeClaimBlocked as exc:
+        if exc.reason == "existing-managed-runtime":
+            logging.warning("blocked by existing managed runtime pid=%s command=%r", exc.pid, exc.command)
+            print(f"AudioSource Win background instance is already running (pid {exc.pid}).")
+        elif exc.reason == "runtime-lock":
+            logging.warning("blocked by runtime lock path=%s owner=%s", runtime_dir() / "audiosource-win.lock", exc.pid)
+            print(f"AudioSource Win background startup blocked by runtime lock (owner {exc.pid if exc.pid is not None else 'unknown'}).")
+        else:
+            logging.warning("blocked by unmanaged background process pid=%s command=%r", exc.pid, exc.command)
+            print(f"AudioSource Win background startup blocked by unmanaged process (pid {exc.pid}).")
+        return 1
     except Exception as exc:
         logging.exception("Managed runtime registration failed: %s", exc)
         print(f"[FAIL] cannot register managed background runtime: {exc}")
         return 1
-    if info is None:
-        existing = read_runtime()
-        logging.warning("Background runtime already running or an unmanaged legacy instance was found.")
-        print(f"AudioSource Win background instance is already running (pid {existing.pid if existing else 'unknown'}).")
-        return 1
-
     logging.info("single instance acquired")
     logging.info("AudioSource Win %s background starting", __version__)
     logging.info("background mode: %s", info.mode)
