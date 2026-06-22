@@ -67,6 +67,37 @@ def test_status_and_stop_without_runtime(monkeypatch, capsys):
     assert "No managed" in capsys.readouterr().out
 
 
+def test_status_reads_live_background_state(monkeypatch, capsys):
+    from audiosource_win_pkg.runtime import RuntimeInfo
+
+    live = RuntimeInfo(321, "background", "pythonw.exe -m audiosource_win_pkg run --background --quiet", "pythonw.exe", "D:\\code\\Audio", "now", "D:\\code\\Audio\\.audiosource-win\\logs\\audiosource-win.log")
+    monkeypatch.setattr("audiosource_win_pkg.cli.read_runtime", lambda: live)
+    monkeypatch.setattr("audiosource_win_pkg.cli.runtime_is_live", lambda value: True)
+    monkeypatch.setattr("audiosource_win_pkg.cli.startup_status", lambda: False)
+    monkeypatch.setattr("audiosource_win_pkg.cli.startup_mode", lambda: None)
+    assert cli.main(["status"]) == 0
+    output = capsys.readouterr().out
+    assert "Running: yes" in output
+    assert "PID: 321" in output
+    assert "Mode: background" in output
+    assert live.log_path in output
+
+
+def test_status_cleans_stale_runtime(monkeypatch, capsys):
+    from audiosource_win_pkg.runtime import RuntimeInfo
+
+    stale = RuntimeInfo(999, "background", "", "pythonw.exe", "D:\\code\\Audio", "now", "log")
+    cleared = []
+    monkeypatch.setattr("audiosource_win_pkg.cli.read_runtime", lambda: stale)
+    monkeypatch.setattr("audiosource_win_pkg.cli.runtime_is_live", lambda value: False)
+    monkeypatch.setattr("audiosource_win_pkg.cli.clear_runtime", lambda: cleared.append(True))
+    monkeypatch.setattr("audiosource_win_pkg.cli.startup_status", lambda: False)
+    monkeypatch.setattr("audiosource_win_pkg.cli.startup_mode", lambda: None)
+    assert cli.main(["status"]) == 0
+    assert cleared == [True]
+    assert "Stale PID cleaned: 999" in capsys.readouterr().out
+
+
 def test_check_handles_adb_missing_without_traceback(monkeypatch, capsys):
     def fake_find_adb():
         raise AdbNotFound("adb not found")
