@@ -105,6 +105,32 @@ def test_windows_process_lookup_failure_keeps_runtime_conservatively(monkeypatch
     assert runtime.process_exists(27224)
 
 
+def test_windows_cim_lookup_uses_create_no_window(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(runtime.os, "name", "nt")
+    monkeypatch.setattr(runtime.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    monkeypatch.setattr(
+        runtime.subprocess,
+        "run",
+        lambda *args, **kwargs: captured.update(kwargs) or SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+    assert runtime._windows_process_snapshot(12345) is None
+    assert captured["creationflags"] == 0x08000000
+
+
+def test_windows_background_scan_uses_create_no_window(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(runtime.os, "name", "nt")
+    monkeypatch.setattr(runtime.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    monkeypatch.setattr(
+        runtime.subprocess,
+        "run",
+        lambda *args, **kwargs: captured.update(kwargs) or SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+    assert runtime.find_unmanaged_background_process() is None
+    assert captured["creationflags"] == 0x08000000
+
+
 def test_voicebridge_pythonw_command_is_not_recognized():
     command = '"D:\\code\\VoiceBridge\\voice-bridge\\.venv\\Scripts\\pythonw.exe" "D:\\code\\VoiceBridge\\voice-bridge\\run.py"'
     assert not runtime.is_audiosource_background_command(command)

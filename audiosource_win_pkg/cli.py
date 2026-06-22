@@ -245,7 +245,9 @@ def cmd_background(args: argparse.Namespace) -> int:
     try:
         configured_log = configure_logging(args.log_level, str(managed_log), console=False)
     except Exception as exc:
-        print(f"[FAIL] cannot configure background logging: {exc}")
+        # pythonw has no console; errors still belong in the background logs.
+        if not getattr(args, "quiet", False):
+            print(f"[FAIL] cannot configure background logging: {exc}")
         return 1
     logging.info("background runtime starting")
     logging.info("runtime directory: %s", runtime_dir())
@@ -257,17 +259,21 @@ def cmd_background(args: argparse.Namespace) -> int:
     except RuntimeClaimBlocked as exc:
         if exc.reason == "existing-managed-runtime":
             logging.warning("blocked by existing managed runtime pid=%s command=%r", exc.pid, exc.command)
-            print(f"AudioSource Win background instance is already running (pid {exc.pid}).")
+            if not getattr(args, "quiet", False):
+                print(f"AudioSource Win background instance is already running (pid {exc.pid}).")
         elif exc.reason == "runtime-lock":
             logging.warning("blocked by runtime lock path=%s owner=%s", runtime_dir() / "audiosource-win.lock", exc.pid)
-            print(f"AudioSource Win background startup blocked by runtime lock (owner {exc.pid if exc.pid is not None else 'unknown'}).")
+            if not getattr(args, "quiet", False):
+                print(f"AudioSource Win background startup blocked by runtime lock (owner {exc.pid if exc.pid is not None else 'unknown'}).")
         else:
             logging.warning("blocked by unmanaged background process pid=%s command=%r", exc.pid, exc.command)
-            print(f"AudioSource Win background startup blocked by unmanaged process (pid {exc.pid}).")
+            if not getattr(args, "quiet", False):
+                print(f"AudioSource Win background startup blocked by unmanaged process (pid {exc.pid}).")
         return 1
     except Exception as exc:
         logging.exception("Managed runtime registration failed: %s", exc)
-        print(f"[FAIL] cannot register managed background runtime: {exc}")
+        if not getattr(args, "quiet", False):
+            print(f"[FAIL] cannot register managed background runtime: {exc}")
         return 1
     logging.info("single instance acquired")
     logging.info("AudioSource Win %s background starting", __version__)

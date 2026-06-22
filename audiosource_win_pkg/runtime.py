@@ -12,6 +12,8 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from .subprocess_utils import subprocess_no_window_kwargs
+
 
 def runtime_dir() -> Path:
     return Path.cwd() / ".audiosource-win" / "runtime"
@@ -84,6 +86,7 @@ def _windows_process_snapshot(pid: int) -> ProcessSnapshot | None:
             text=True,
             timeout=3,
             check=False,
+            **subprocess_no_window_kwargs(),
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise RuntimeError(f"Windows process lookup failed for pid={pid}: {exc}") from exc
@@ -187,6 +190,7 @@ def find_unmanaged_background_process(ignore_pids: set[int] | None = None) -> in
             text=True,
             timeout=3,
             check=False,
+            **subprocess_no_window_kwargs(),
         )
     except (OSError, subprocess.SubprocessError) as exc:
         logging.debug("unmanaged background scan unavailable: %s", exc)

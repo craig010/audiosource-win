@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 ENTRY_NAME = "audiosource-win-startup.vbs"
+LEGACY_ENTRY_NAMES = ("audiosource-win-tray.vbs",)
 
 
 class StartupError(RuntimeError):
@@ -22,6 +23,26 @@ def get_startup_folder() -> Path:
 
 def get_startup_entry_path() -> Path:
     return get_startup_folder() / ENTRY_NAME
+
+
+def _is_managed_legacy_vbs(path: Path) -> bool:
+    """Recognize only a VBS entry that unambiguously launches this project."""
+    if path.suffix.lower() != ".vbs" or not path.name.lower().startswith("audiosource"):
+        return False
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return "audiosource_win_pkg" in content or "audiosource_win.py" in content
+
+
+def _managed_startup_entries(folder: Path) -> list[Path]:
+    entries = [folder / ENTRY_NAME, *(folder / name for name in LEGACY_ENTRY_NAMES)]
+    try:
+        entries.extend(path for path in folder.glob("audiosource*.vbs") if _is_managed_legacy_vbs(path))
+    except OSError:
+        pass
+    return list(dict.fromkeys(entries))
 
 
 def find_pythonw(executable: str | None = None) -> Path:
@@ -65,16 +86,21 @@ def enable_startup(mode: str = "background", start_bridge: bool = True) -> Path:
     folder = get_startup_folder()
     folder.mkdir(parents=True, exist_ok=True)
     entry = get_startup_entry_path()
+    # Replace only known/marked legacy entries; do not touch other programs.
+    for candidate in _managed_startup_entries(folder):
+        if candidate != entry:
+            candidate.unlink(missing_ok=True)
     entry.write_text(build_vbs_content(mode, start_bridge), encoding="utf-8")
     return entry
 
 
 def disable_startup() -> bool:
-    entry = get_startup_entry_path()
-    if not entry.exists():
-        return False
-    entry.unlink()
-    return True
+    removed = False
+    for entry in _managed_startup_entries(get_startup_folder()):
+        if entry.exists():
+            entry.unlink()
+            removed = True
+    return removed
 
 
 def startup_status() -> bool:

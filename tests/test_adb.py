@@ -1,5 +1,9 @@
+from types import SimpleNamespace
+
 import pytest
 
+from audiosource_win_pkg import adb
+from audiosource_win_pkg import subprocess_utils
 from audiosource_win_pkg.adb import AdbDevice, choose_adb_device, infer_transport, parse_adb_devices
 from audiosource_win_pkg.errors import MultipleAdbDevices, NoAdbDevice
 
@@ -52,3 +56,16 @@ def test_choose_device_requested_serial_success_and_failure():
     assert choose_adb_device(devices, "one").serial == "one"
     with pytest.raises(NoAdbDevice):
         choose_adb_device(devices, "missing")
+
+
+def test_adb_commands_use_create_no_window_on_windows(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(subprocess_utils.os, "name", "nt")
+    monkeypatch.setattr(adb.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    monkeypatch.setattr(
+        adb.subprocess,
+        "run",
+        lambda *args, **kwargs: captured.update(kwargs) or SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+    adb.run_cmd(["adb", "forward", "tcp:27183", "localabstract:audiosource"])
+    assert captured["creationflags"] == 0x08000000

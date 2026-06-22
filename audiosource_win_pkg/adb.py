@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from .errors import AdbNotFound, AdbOffline, AdbUnauthorized, AndroidAppNotFound, ForwardFailed, MultipleAdbDevices, NoAdbDevice
+from .subprocess_utils import subprocess_no_window_kwargs
 
 APP_PACKAGE = "fr.dzx.audiosource"
 APP_ACTIVITY = "fr.dzx.audiosource/.MainActivity"
@@ -29,7 +30,15 @@ def infer_transport(serial: str) -> str:
 
 
 def run_cmd(cmd: list[str], check: bool = False, timeout: float | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(cmd, check=check, capture_output=True, text=True, shell=False, timeout=timeout)
+    return subprocess.run(
+        cmd,
+        check=check,
+        capture_output=True,
+        text=True,
+        shell=False,
+        timeout=timeout,
+        **subprocess_no_window_kwargs(),
+    )
 
 
 def find_adb() -> str:

@@ -41,6 +41,10 @@ def test_enable_background_startup_creates_idempotent_entry(monkeypatch):
     content = first.read_text(encoding="utf-8")
     assert "audiosource_win_pkg run --background --quiet" in content
     assert "pythonw.exe" in content
+    assert "CurrentDirectory" in content
+    assert ", 0, False" in content
+    assert "powershell.exe" not in content.lower()
+    assert "cmd.exe" not in content.lower()
     assert startup.startup_mode() == "background"
 
 
@@ -61,6 +65,28 @@ def test_disable_startup_deletes_entry(monkeypatch):
     assert startup.disable_startup() is True
     assert startup.startup_status() is False
     assert startup.disable_startup() is False
+
+
+def test_enable_replaces_only_marked_legacy_entries_and_disable_cleans_them(monkeypatch):
+    tmp_path = make_temp_dir("legacy-startup")
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    folder = startup.get_startup_folder()
+    folder.mkdir(parents=True)
+    legacy = folder / "audiosource-win-tray.vbs"
+    legacy.write_text('shell.Run "python -m audiosource_win_pkg tray"', encoding="utf-8")
+    unrelated = folder / "audiosource-helper.vbs"
+    unrelated.write_text('shell.Run "python -m unrelated"', encoding="utf-8")
+    startup.enable_startup(mode="background")
+    assert not legacy.exists()
+    assert unrelated.exists()
+    assert [path.name for path in folder.glob("audiosource*.vbs") if _is_ours(path)] == [startup.ENTRY_NAME]
+    assert startup.disable_startup() is True
+    assert not startup.get_startup_entry_path().exists()
+    assert unrelated.exists()
+
+
+def _is_ours(path: Path) -> bool:
+    return "audiosource_win_pkg" in path.read_text(encoding="utf-8")
 
 
 def test_pythonw_is_preferred_for_python_exe():
