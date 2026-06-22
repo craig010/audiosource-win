@@ -16,7 +16,7 @@ from .controller import BridgeController
 from .diagnostics import format_results, run_check, run_doctor
 from .errors import AudioSourceWinError
 from .logging_config import configure_logging
-from .runtime import claim_runtime, clear_runtime, log_path, read_runtime, request_stop, stop_request_path
+from .runtime import claim_runtime, clear_runtime, log_path, read_runtime, request_stop, runtime_dir, runtime_is_live, state_path, pid_path, stop_request_path
 from .startup import StartupError, disable_startup, enable_startup, startup_mode, startup_status
 
 DEFAULT_HOST = "127.0.0.1"
@@ -242,24 +242,46 @@ def cmd_background(args: argparse.Namespace) -> int:
     if args.verbose:
         args.log_level = "DEBUG"
     managed_log = log_path()
-    info = claim_runtime("background", managed_log)
+    try:
+        configured_log = configure_logging(args.log_level, str(managed_log), console=False)
+    except Exception as exc:
+        print(f"[FAIL] cannot configure background logging: {exc}")
+        return 1
+    logging.info("background runtime starting")
+    logging.info("runtime directory: %s", runtime_dir())
+    logging.info("pid file: %s", pid_path())
+    logging.info("state file: %s", state_path())
+    try:
+        command = " ".join([f'"{sys.executable}"', "-m", "audiosource_win_pkg", *sys.argv[1:]])
+        info = claim_runtime("background", configured_log, command)
+    except Exception as exc:
+        logging.exception("Managed runtime registration failed: %s", exc)
+        print(f"[FAIL] cannot register managed background runtime: {exc}")
+        return 1
     if info is None:
         existing = read_runtime()
+        logging.warning("Background runtime already running or an unmanaged legacy instance was found.")
         print(f"AudioSource Win background instance is already running (pid {existing.pid if existing else 'unknown'}).")
         return 1
 
-    configure_logging(args.log_level, str(managed_log), console=False)
+    logging.info("single instance acquired")
     logging.info("AudioSource Win %s background starting", __version__)
-    logging.info("mode=background pid=%s python=%s cwd=%s", info.pid, sys.executable, os.getcwd())
+    logging.info("background mode: %s", info.mode)
+    logging.info("mode=background pid=%s python executable: %s cwd: %s", info.pid, sys.executable, os.getcwd())
     logging.info("Startup arguments: %s", vars(args))
     config = build_config(args)
     logging.info("Bridge config: %s", config)
     controller = BridgeController(config)
     try:
+        logging.info("controller starting")
         controller.start()
+        streaming_logged = False
         while controller.is_running():
+            if not streaming_logged and controller.get_status().state == "STREAMING":
+                logging.info("controller entered STREAMING")
+                streaming_logged = True
             if stop_request_path().exists():
-                logging.info("Stop requested through CLI.")
+                logging.info("stop request received")
                 controller.stop(timeout=5.0)
                 break
             time.sleep(0.25)
@@ -278,19 +300,20 @@ def cmd_background(args: argparse.Namespace) -> int:
         return 1
     finally:
         clear_runtime()
+        logging.info("runtime cleanup completed")
 
 
 def cmd_status() -> int:
     info = read_runtime()
+    stale_pid = None
     if info is None:
         running = False
         pid = "n/a"
         mode = "n/a"
     else:
-        from .runtime import process_is_alive
-
-        running = process_is_alive(info.pid)
+        running = runtime_is_live(info)
         if not running:
+            stale_pid = info.pid
             clear_runtime()
         pid = info.pid if running else "n/a"
         mode = info.mode if running else "n/a"
@@ -298,7 +321,9 @@ def cmd_status() -> int:
     print(f"Running: {'yes' if running else 'no'}")
     print(f"PID: {pid}")
     print(f"Mode: {mode}")
-    print(f"Log: {log_path()}")
+    print(f"Log: {info.log_path if info and running else log_path()}")
+    if stale_pid is not None:
+        print(f"Stale PID cleaned: {stale_pid}")
     print(f"Startup: {'enabled' if enabled else 'disabled'}")
     print(f"Startup mode: {startup_mode() or 'n/a'}")
     return 0
